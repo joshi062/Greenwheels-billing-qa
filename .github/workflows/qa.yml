@@ -1,0 +1,85 @@
+name: Greenwheels Billing Cycle QA Pipeline
+
+on:
+  pull_request:
+    branches: [ main, master, develop ]
+  push:
+    branches: [ main ]
+
+jobs:
+  api-quality-gate:
+    name: Newman API & Business Rule Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Start Billing Cycle Stub Service
+        run: |
+          docker compose up -d
+          echo "Waiting for stub service to become responsive within 5 seconds..."
+
+      - name: Enforce 5-Second Service Readiness & Response SLA Gate
+        run: |
+          START_TIME=$(date +%s%3N)
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8000/billing/summary/drv_active_001 || echo "000")
+          END_TIME=$(date +%s%3N)
+          ELAPSED=$((END_TIME - START_TIME))
+          echo "Service responded with HTTP $HTTP_STATUS in ${ELAPSED}ms"
+          if [ "$HTTP_STATUS" = "000" ] || [ "$ELAPSED" -gt 5000 ]; then
+            echo "::error::Stub service failed to respond within the 5-second (5000ms) SLA gate."
+            docker compose logs
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Newman and Reporters
+        run: npm install -g newman newman-reporter-junitfull
+
+      - name: Execute Newman API Test Suite (Strict 5s Request Timeout)
+        id: newman_run
+        run: |
+          newman run postman/collection.json \
+            --environment postman/env.json \
+            --timeout-request 5000 \
+            --reporters cli,json,junitfull \
+            --reporter-json-export newman-results.json \
+            --reporter-junitfull-export newman-results.xml
+
+      - name: Publish Passed/Failed Test Summary to PR Check
+        if: always()
+        run: |
+          echo "## 🚲 Greenwheels Billing Cycle Quality Gate Summary" >> $GITHUB_STEP_SUMMARY
+          if [ -f newman-results.json ]; then
+            TOTAL=$(jq '.run.stats.assertions.total' newman-results.json)
+            FAILED=$(jq '.run.stats.assertions.failed' newman-results.json)
+            PASSED=$((TOTAL - FAILED))
+            REQ_TOTAL=$(jq '.run.stats.requests.total' newman-results.json)
+            AVG_TIME=$(jq '.run.timings.responseAverage | floor' newman-results.json)
+
+            echo "| Metric | Count / Value |" >> $GITHUB_STEP_SUMMARY
+            echo "| :--- | :---: |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Total API Requests** | $REQ_TOTAL |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Total Assertions** | $TOTAL |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Passed Assertions** | ✅ $PASSED |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Failed Assertions** | ❌ $FAILED |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Avg Response Time** | ⏱️ ${AVG_TIME} ms (SLA < 5000 ms) |" >> $GITHUB_STEP_SUMMARY
+
+            if [ "$FAILED" -gt 0 ]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### ❌ Failed Test Assertions" >> $GITHUB_STEP_SUMMARY
+              jq -r '.run.failures[] | "- **\(.source.name)**: \(.error.test) — `\(.error.message)`"' newman-results.json >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "⚠️ Newman did not produce a results file because the service failed the readiness gate." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Tear Down Stub Containers
+        if: always()
+        run: docker compose down -v

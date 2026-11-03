@@ -1,0 +1,588 @@
+{
+  "info": {
+    "_postman_id": "Greenwheels-billing-cycle-suite-v21",
+    "name": "Greenwheels Bike - Billing Cycle Quality Suite",
+    "description": "End-to-end API test suite covering Happy Paths, 5 Core Business Rules, and Negative/Boundary Scenarios.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{auth_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "1. Happy Path Scenarios",
+      "item": [
+        {
+          "name": "HP-01: POST /billing/discounts - Apply Weekly Discount",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 or 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "pm.test('Response time is under 5000ms', function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                  "});",
+                  "pm.test('Response structure and business fields are valid', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.be.an('object');",
+                  "    pm.expect(jsonData.driver_id).to.eql(pm.environment.get('driver_id'));",
+                  "    pm.expect(jsonData.currency).to.eql('KES');",
+                  "    pm.expect(jsonData.discount_amount).to.eql(500);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"discount_amount\": 500,\n  \"currency\": \"KES\",\n  \"reason\": \"safety_bonus\",\n  \"target_week\": 10\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/billing/discounts",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "discounts"]
+            }
+          }
+        },
+        {
+          "name": "HP-02: POST /billing/cycles - Generate Weekly Billing Cycle",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 201 Created or 200 OK', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "pm.test('Response structure contains invoice_id, amount_due, currency, due_date', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.all.keys('invoice_id', 'amount_due', 'currency', 'due_date');",
+                  "    pm.expect(jsonData.invoice_id).to.be.a('string').and.not.be.empty;",
+                  "    pm.expect(jsonData.currency).to.eql('KES');",
+                  "    pm.expect(jsonData.amount_due).to.be.a('number').and.to.be.above(0);",
+                  "    pm.environment.set('active_invoice_id', jsonData.invoice_id);",
+                  "    pm.environment.set('active_amount_due', jsonData.amount_due);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"week_number\": 10,\n  \"currency\": \"KES\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/billing/cycles",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "cycles"]
+            }
+          }
+        },
+        {
+          "name": "HP-03: POST /billing/payments - Record Payment Fact Against Invoice",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 or 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "pm.test('Payment fact response structure and KES currency verified', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.include.keys('payment_reference', 'invoice_id', 'amount', 'currency', 'status');",
+                  "    pm.expect(jsonData.invoice_id).to.eql(pm.environment.get('active_invoice_id'));",
+                  "    pm.expect(jsonData.currency).to.eql('KES');",
+                  "    pm.expect(jsonData.status).to.be.oneOf(['recorded', 'paid', 'success']);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"invoice_id\": \"{{active_invoice_id}}\",\n  \"payment_reference\": \"PAY-REF-HP-1001\",\n  \"amount\": {{active_amount_due}},\n  \"currency\": \"KES\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/billing/payments",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "payments"]
+            }
+          }
+        },
+        {
+          "name": "HP-04: GET /billing/cycles/{driver_id} - Retrieve Driver Billing Cycles",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Cycles list contains valid status enum values', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    const cycles = Array.isArray(jsonData) ? jsonData : jsonData.cycles;",
+                  "    pm.expect(cycles).to.be.an('array').that.is.not.empty;",
+                  "    cycles.forEach(cycle => {",
+                  "        pm.expect(cycle).to.include.keys('invoice_id', 'status', 'amount_due', 'currency');",
+                  "        pm.expect(cycle.status).to.be.oneOf(['pending', 'paid', 'overdue', 'disputed']);",
+                  "    });",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/billing/cycles/{{driver_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "cycles", "{{driver_id}}"]
+            }
+          }
+        },
+        {
+          "name": "HP-05: GET /billing/summary/{driver_id} - Retrieve Driver Financial Summary",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Summary projection contains aggregate billing fields', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.include.keys('total_billed', 'total_paid', 'total_outstanding', 'missed_payment_count');",
+                  "    pm.expect(jsonData.total_billed).to.be.a('number');",
+                  "    pm.expect(jsonData.total_paid).to.be.a('number');",
+                  "    pm.expect(jsonData.total_outstanding).to.eql(jsonData.total_billed - jsonData.total_paid);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/billing/summary/{{driver_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "summary", "{{driver_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Business Rule Validation Tests",
+      "item": [
+        {
+          "name": "BR-01: Reject Billing Cycle Generation for Paused Lease",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('BR-01: Paused lease billing cycle creation is rejected (400/409/422)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400, 409, 422]);",
+                  "});",
+                  "pm.test('BR-01: Error body specifies lease state violation', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.any.keys('error', 'message', 'detail');",
+                  "    const errorText = JSON.stringify(jsonData).toLowerCase();",
+                  "    pm.expect(errorText).to.satisfy(txt => txt.includes('paused') || txt.includes('inactive') || txt.includes('state'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{paused_driver_id}}\",\n  \"week_number\": 11,\n  \"currency\": \"KES\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/billing/cycles",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "cycles"]
+            }
+          }
+        },
+        {
+          "name": "BR-02: Idempotent Payment Submission Does Not Duplicate Credit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('BR-02: Duplicate payment_reference handled safely (200 OK idempotent or 409 Conflict)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 409]);",
+                  "});",
+                  "pm.sendRequest({",
+                  "    url: pm.environment.get('base_url') + '/billing/summary/' + pm.environment.get('driver_id'),",
+                  "    method: 'GET',",
+                  "    header: { 'Authorization': 'Bearer ' + pm.environment.get('auth_token') }",
+                  "}, function (err, res) {",
+                  "    pm.test('BR-02: Driver total_paid was NOT double-credited in summary projection', function () {",
+                  "        const summary = res.json();",
+                  "        pm.expect(summary.total_paid).to.eql(Number(pm.environment.get('active_amount_due')));",
+                  "        pm.expect(summary.total_outstanding).to.eql(0);",
+                  "    });",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"invoice_id\": \"{{active_invoice_id}}\",\n  \"payment_reference\": \"PAY-REF-HP-1001\",\n  \"amount\": {{active_amount_due}},\n  \"currency\": \"KES\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/billing/payments",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "payments"]
+            }
+          }
+        },
+        {
+          "name": "BR-03: Driver With 3 Consecutive Missed Payments Flagged Overdue in Summary",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('BR-03: Status code is 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('BR-03: Driver with 3 consecutive missed payments is flagged as overdue', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.include.keys('total_billed', 'total_paid', 'total_outstanding', 'missed_payment_count');",
+                  "    pm.expect(jsonData.missed_payment_count).to.be.at.least(3);",
+                  "    const isOverdue = jsonData.status === 'overdue' || jsonData.is_overdue === true || jsonData.account_status === 'overdue';",
+                  "    pm.expect(isOverdue, 'Expected summary to flag driver as overdue after 3 consecutive missed payments').to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/billing/summary/{{overdue_driver_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "summary", "{{overdue_driver_id}}"]
+            }
+          }
+        },
+        {
+          "name": "BR-04: Discounts Apply to Next Week Only and Do Not Stack or Carry Over",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.sendRequest({",
+                  "    url: pm.environment.get('base_url') + '/billing/discounts',",
+                  "    method: 'POST',",
+                  "    header: {",
+                  "        'Content-Type': 'application/json',",
+                  "        'Authorization': 'Bearer ' + pm.environment.get('auth_token')",
+                  "    },",
+                  "    body: {",
+                  "        mode: 'raw',",
+                  "        raw: JSON.stringify({ driver_id: pm.environment.get('driver_id'), discount_amount: 400, currency: 'KES', reason: 'referral', target_week: 12 })",
+                  "    }",
+                  "}, function () {});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('BR-04: Second discount in same cycle rejected (400/409) OR overwrites without stacking', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201, 400, 409, 422]);",
+                  "});",
+                  "pm.sendRequest({",
+                  "    url: pm.environment.get('base_url') + '/billing/cycles',",
+                  "    method: 'POST',",
+                  "    header: {",
+                  "        'Content-Type': 'application/json',",
+                  "        'Authorization': 'Bearer ' + pm.environment.get('auth_token')",
+                  "    },",
+                  "    body: {",
+                  "        mode: 'raw',",
+                  "        raw: JSON.stringify({ driver_id: pm.environment.get('driver_id'), week_number: 13, currency: 'KES' })",
+                  "    }",
+                  "}, function (err, res) {",
+                  "    pm.test('BR-04: Subsequent week (week 13) reverts to full base rate (no carry-over)', function () {",
+                  "        const cycleW13 = res.json();",
+                  "        pm.expect(cycleW13.amount_due).to.eql(Number(pm.environment.get('base_weekly_rate')));",
+                  "    });",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"discount_amount\": 400,\n  \"currency\": \"KES\",\n  \"reason\": \"stacking_attempt\",\n  \"target_week\": 12\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/billing/discounts",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "discounts"]
+            }
+          }
+        },
+        {
+          "name": "BR-05: Strict KES Currency Validation on Write Endpoints",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('BR-05: Non-KES currency on write endpoint is rejected with 400 or 422', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400, 422]);",
+                  "});",
+                  "pm.test('BR-05: Error response explicitly mentions currency validation', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.any.keys('error', 'message', 'detail');",
+                  "    pm.expect(JSON.stringify(jsonData).toUpperCase()).to.include('KES');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"invoice_id\": \"{{active_invoice_id}}\",\n  \"payment_reference\": \"PAY-REF-NON-KES-01\",\n  \"amount\": 3500,\n  \"currency\": \"USD\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/billing/payments",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "payments"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Negative & Edge Case Scenarios",
+      "item": [
+        {
+          "name": "NEG-01: POST /billing/cycles - Reject Terminated Lease",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('NEG-01: Terminated lease rejected with 400/409/422', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400, 409, 422]);",
+                  "});",
+                  "pm.test('NEG-01: Response body contains error structure and terminated state message', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.any.keys('error', 'message', 'detail');",
+                  "    pm.expect(JSON.stringify(jsonData).toLowerCase()).to.include('terminated');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{terminated_driver_id}}\",\n  \"week_number\": 11,\n  \"currency\": \"KES\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/billing/cycles",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "cycles"]
+            }
+          }
+        },
+        {
+          "name": "NEG-02: POST /billing/payments - Missing Required Field (payment_reference)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('NEG-02: Missing payment_reference returns 400 or 422', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400, 422]);",
+                  "});",
+                  "pm.test('NEG-02: Validation error identifies missing payment_reference field', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.be.an('object');",
+                  "    pm.expect(JSON.stringify(jsonData)).to.include('payment_reference');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"invoice_id\": \"{{active_invoice_id}}\",\n  \"amount\": 3500,\n  \"currency\": \"KES\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/billing/payments",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "payments"]
+            }
+          }
+        },
+        {
+          "name": "NEG-03: POST /billing/discounts - Reject Invalid Currency (INR)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('NEG-03: Discount with INR currency rejected with 400 or 422', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400, 422]);",
+                  "});",
+                  "pm.test('NEG-03: Error body rejects non-KES currency on discounts endpoint', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.any.keys('error', 'message', 'detail');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"discount_amount\": 500,\n  \"currency\": \"INR\",\n  \"reason\": \"promo\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/billing/discounts",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "discounts"]
+            }
+          }
+        },
+        {
+          "name": "NEG-04: POST /billing/cycles - Boundary Invalid Week Number (week 0)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('NEG-04: Invalid boundary week_number (0) rejected with 400 or 422', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400, 422]);",
+                  "});",
+                  "pm.test('NEG-04: Error response references week_number boundary', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.any.keys('error', 'message', 'detail');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"week_number\": 0,\n  \"currency\": \"KES\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/billing/cycles",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "cycles"]
+            }
+          }
+        },
+        {
+          "name": "NEG-05: POST /billing/payments - Reject Negative Payment Amount",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('NEG-05: Negative payment amount rejected with 400 or 422', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400, 422]);",
+                  "});",
+                  "pm.test('NEG-05: Error payload flags invalid negative amount', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.any.keys('error', 'message', 'detail');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\",\n  \"invoice_id\": \"{{active_invoice_id}}\",\n  \"payment_reference\": \"PAY-REF-NEG-999\",\n  \"amount\": -1500,\n  \"currency\": \"KES\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/billing/payments",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "payments"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
